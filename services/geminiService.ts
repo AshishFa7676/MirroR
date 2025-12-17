@@ -2,11 +2,14 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { LogEntry, Task, UserProfile } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const MODEL_NAME = "gemini-3-flash-preview";
+
+// Helper to get fresh AI instance
+const getAi = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const GeminiService = {
   async analyzeOnboarding(responses: any): Promise<void> {
+    const ai = getAi();
     await ai.models.generateContent({
       model: MODEL_NAME,
       contents: `OBLIGATION INTAKE: ${JSON.stringify(responses)}`,
@@ -23,6 +26,7 @@ export const GeminiService = {
   },
 
   async getSocraticQuestion(task: Task, profile: UserProfile, history: string[], currentStep: number): Promise<string> {
+    const ai = getAi();
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
       contents: `REPUDIATION ATTEMPT: ${task.title}. LOGS: ${JSON.stringify(history.slice(-10))}`,
@@ -39,6 +43,7 @@ export const GeminiService = {
   },
 
   async generateTechnicalQuiz(taskTitle: string): Promise<string[]> {
+    const ai = getAi();
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
       contents: `VERIFICATION_AUDIT: "${taskTitle}"`,
@@ -60,6 +65,7 @@ export const GeminiService = {
   },
 
   async gradeQuiz(questions: string[], answers: string[]): Promise<{passed: boolean, feedback: string}> {
+    const ai = getAi();
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
       contents: `EVIDENCE: Q: ${JSON.stringify(questions)} | A: ${JSON.stringify(answers)}`,
@@ -84,6 +90,7 @@ export const GeminiService = {
   },
 
   async generateInquisitionQuestions(logs: LogEntry[], profile: UserProfile): Promise<string[]> {
+    const ai = getAi();
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
       contents: `REGISTRY_AUDIT: ${JSON.stringify(logs.slice(0, 30))}`,
@@ -105,6 +112,7 @@ export const GeminiService = {
   },
 
   async analyzeBehaviorLogs(logs: LogEntry[], profile: UserProfile, inquisitionAnswers?: string[]): Promise<string> {
+    const ai = getAi();
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
       contents: `FULL REGISTRY: ${JSON.stringify(logs.slice(0, 50))}. ANSWERS: ${JSON.stringify(inquisitionAnswers)}`,
@@ -124,6 +132,7 @@ export const GeminiService = {
   },
 
   async reflectOnJournal(entry: string, profile: UserProfile): Promise<string> {
+    const ai = getAi();
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
       contents: `NEURAL DUMP: "${entry}"`,
