@@ -1,0 +1,7 @@
+{
+  "name": "MIRROR",
+  "description": "Metacognitive Interrogation & Ruthless Reflection Operating Registry. A behavioral modification system for high-functioning procrastinators.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
