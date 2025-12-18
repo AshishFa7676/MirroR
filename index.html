@@ -10,6 +10,9 @@
       tailwind.config = {
         theme: {
           extend: {
+            gridTemplateColumns: {
+              '24': 'repeat(24, minmax(0, 1fr))',
+            },
             colors: {
               'void': '#09090b',
               'surface': '#18181b',
@@ -53,7 +56,8 @@
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react-dom": "https://esm.sh/react-dom@^19.2.3",
     "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
-    "vite": "https://esm.sh/vite@^7.3.0"
+    "vite": "https://esm.sh/vite@^7.3.0",
+    "process": "https://esm.sh/process@^0.11.10"
   }
 }
 </script>

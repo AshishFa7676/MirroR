@@ -30,6 +30,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     } catch (e) {
       console.warn("Amon initial audit timeout.");
     }
+    // Fix: Added missing 'integrityDebt' required property to the UserProfile object
     const profile: UserProfile = {
       situation: responses.situation,
       distractions: responses.distractions,
@@ -37,7 +38,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
       delayReason: responses.delayReason,
       deadlineDate: new Date('2025-12-25').getTime(),
       hasCompletedOnboarding: true,
-      sprintGoals: ['SQL ARCHITECTURE', 'PYTHON ANALYSIS', 'BI DASHBOARDS', 'EXCEL MODELS', 'STATS']
+      sprintGoals: ['SQL ARCHITECTURE', 'PYTHON ANALYSIS', 'BI DASHBOARDS', 'EXCEL MODELS', 'STATS'],
+      integrityDebt: 0
     };
     onComplete(profile);
   };

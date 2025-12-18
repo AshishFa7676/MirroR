@@ -25,7 +25,8 @@ export enum LogType {
   VOID_EXPLANATION = 'VOID_EXPLANATION',
   SELF_INQUISITION = 'SELF_INQUISITION',
   ALARM_TRIGGERED = 'ALARM_TRIGGERED',
-  CONTRACT_AMENDED = 'CONTRACT_AMENDED'
+  CONTRACT_AMENDED = 'CONTRACT_AMENDED',
+  SHIELD_LOGGED = 'SHIELD_LOGGED'
 }
 
 export interface UserProfile {
@@ -36,6 +37,7 @@ export interface UserProfile {
   deadlineDate: number; 
   hasCompletedOnboarding: boolean;
   sprintGoals: string[];
+  integrityDebt: number;
 }
 
 export interface LogEntry {
@@ -54,6 +56,12 @@ export interface JournalEntry {
   reflection?: string;
 }
 
+export interface SubTask {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -64,4 +72,6 @@ export interface Task {
   status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'BREACHED' | 'FAILED' | 'MISSED';
   actualTimeSpentSeconds: number;
   stakes: 'LOW' | 'HIGH' | 'CRITICAL';
+  subTasks: SubTask[];
+  technicalEvidence?: string;
 }
