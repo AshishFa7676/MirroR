@@ -29,23 +29,24 @@ MIRROR is a metacognitive productivity system designed for high-functioning proc
 *   **Atomic Persistence**: Uses IndexedDB via a `StorageService` to ensure zero data loss. Task updates are O(1) atomic writes, not bulk rewrites.
 *   **Unidirectional Data Flow**: The `App.tsx` acts as the single source of truth. Modals and Logic Gates (Socratic Gatekeeper) delegate state back to the root.
 *   **Audio Engine**: A synthesized `SoundService` (Oscillators) removes the need for external MP3 assets and includes a "User Interaction Handshake" to bypass browser audio policies.
-*   **AI Integration**: Deep integration with Google Gemini 2.0 Flash/Pro for:
+*   **AI Integration**: Deep integration with Google Gemini 3.0 Flash/Pro for:
     *   **Gatekeeper**: Interrogates you before allowing breaks.
     *   **Verifier**: Audits task evidence before marking complete.
     *   **Analyst**: Generates psychological profiles based on your logs.
 
-### 🚀 Deployment
+### 🚀 Deployment (Netlify)
 
-This project is optimized for **Vercel** or **Netlify**.
+This project is optimized for **Netlify**.
 
-**Vercel:**
-1.  Push to GitHub.
-2.  Import project to Vercel.
-3.  Add `VITE_GEMINI_API_KEY` to Vercel Environment Variables.
-4.  Deploy.
-
-### ⚠️ Behavioral Warnings
-
-*   **Do not ghost the app.** It tracks inactivity.
-*   **Do not lie to the Verifier.** The AI is prompted to be skeptical.
-*   **Do not ignore the Gatekeeper.** You must justify every pause.
+1.  **Push to Git**: Push your code to a GitHub, GitLab, or Bitbucket repository.
+2.  **New Site from Git**: Log in to Netlify and click "Add new site" > "Import an existing project".
+3.  **Connect Repository**: Select your repository.
+4.  **Build Settings**:
+    *   Netlify will detect `netlify.toml` automatically.
+    *   **Build command**: `npm run build`
+    *   **Publish directory**: `dist`
+5.  **Environment Variables**:
+    *   Go to **Site Settings > Environment variables**.
+    *   Add Key: `VITE_GEMINI_API_KEY`
+    *   Add Value: `your_actual_api_key_string`
+6.  **Deploy**: Click "Deploy site".
