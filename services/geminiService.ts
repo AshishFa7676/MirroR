@@ -3,9 +3,9 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { LogEntry, Task, UserProfile, JournalEntry, PatternAnalysis, LogType } from "../types";
 
 // CONFIGURATION FOR REAL-WORLD DEPLOYMENT
-// We use 2.5 Flash for high-speed interaction (Gatekeeper, Verifier)
-// We use 3.0 Pro for deep analytical reasoning (Pattern Analysis)
-const MODEL_NAME = "gemini-2.5-flash-latest";
+// We use 3.0 Flash for high-speed interaction (Gatekeeper, Verifier) - Cutting Edge speed/cost ratio
+// We use 3.0 Pro for deep analytical reasoning (Pattern Analysis) - Maximum IQ
+const MODEL_NAME = "gemini-3-flash-preview";
 const PRO_MODEL = "gemini-3-pro-preview"; 
 
 const getAi = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
