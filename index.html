@@ -3,25 +3,45 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MIRROR | Metacognitive Registry</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#f97316" />
+    <meta name="description" content="Metacognitive Interrogation & Ruthless Reflection Operating Registry" />
+    <title>MIRROR // MASTER</title>
+    
+    <!-- The Flame Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔥</text></svg>">
+    
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <script>
       tailwind.config = {
         theme: {
           extend: {
-            gridTemplateColumns: {
-              '24': 'repeat(24, minmax(0, 1fr))',
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
             },
             colors: {
-              'void': '#09090b',
-              'surface': '#18181b',
-              'highlight': '#fafafa',
-              'danger': '#7f1d1d',
-              'success': '#14532d',
+              background: '#050505',
+              surface: '#09090b',
+              card: '#121212',
+              border: '#27272a',
+              primary: {
+                DEFAULT: '#f97316', // Orange-500
+                glow: 'rgba(249, 115, 22, 0.5)'
+              },
+              danger: '#ef4444',
+              success: '#10b981',
+              warning: '#eab308',
             },
-            fontFamily: {
-              mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', "Liberation Mono", "Courier New", 'monospace'],
+            backgroundImage: {
+              'gradient-primary': 'linear-gradient(135deg, #f97316 0%, #dc2626 100%)',
+              'gradient-dark': 'linear-gradient(180deg, #18181b 0%, #09090b 100%)',
+              'glow-radial': 'radial-gradient(circle at center, rgba(249, 115, 22, 0.15) 0%, transparent 70%)',
+            },
+            boxShadow: {
+              'glow': '0 0 20px -5px rgba(249, 115, 22, 0.3)',
+              'card': '0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.1)',
             }
           }
         }
@@ -29,21 +49,31 @@
     </script>
     <style>
       body {
-        background-color: #09090b;
+        background-color: #050505;
         color: #e4e4e7;
-        font-family: 'ui-monospace', 'SFMono-Regular', monospace;
+        font-family: 'Inter', sans-serif;
+        overscroll-behavior: none;
       }
+      /* Custom Scrollbar for that premium feel */
       ::-webkit-scrollbar {
-        width: 8px;
+        width: 6px;
+        height: 6px;
       }
       ::-webkit-scrollbar-track {
-        background: #18181b;
+        background: #09090b;
       }
       ::-webkit-scrollbar-thumb {
-        background: #3f3f46;
+        background: #27272a;
+        border-radius: 3px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #52525b;
+        background: #3f3f46;
+      }
+      
+      .glass-panel {
+        background: rgba(18, 18, 18, 0.7);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
       }
     </style>
   <script type="importmap">

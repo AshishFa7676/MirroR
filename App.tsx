@@ -1,329 +1,728 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { LogEntry, LogType, Task, ViewState, UserProfile, JournalEntry, SubTask } from './types';
-import { GeminiService } from './services/geminiService';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { LogEntry, LogType, Task, ViewState, UserProfile, JournalEntry, PomodoroState } from './types';
 import { StorageService } from './services/storageService';
-import { ActivityLog } from './components/ActivityLog';
-import { Planner } from './components/Planner';
-import { Journal } from './components/Journal';
+import { soundService } from './services/soundService';
 import { Onboarding } from './components/Onboarding';
-import { ShieldLog } from './components/ShieldLog';
+import { ActivityLog } from './components/ActivityLog';
+import { Journal } from './components/Journal';
 import Analytics from './components/Analytics';
+import { Planner } from './components/Planner';
+import { ReflectionSession } from './components/ReflectionSession';
+import { TaskCard } from './components/TaskCard';
+import { SocraticGatekeeper } from './components/SocraticGatekeeper';
+import { CompletionVerifier } from './components/CompletionVerifier';
+import { ShieldLog } from './components/ShieldLog';
+import { CreateTaskDialog } from './components/CreateTaskDialog';
 import { 
-  ShieldAlert, Brain, List, BarChart2, 
-  History, Menu, X, ArrowRight, Clock, AlertTriangle, AlertCircle, Download, Upload, Bell
+  LayoutDashboard, CheckSquare, Book, Activity, User, 
+  Plus, Flame, Target, Clock, Settings, Pause, Play, History
 } from 'lucide-react';
 
-export default function App() {
-  const [view, setView] = useState<ViewState>(ViewState.ONBOARDING);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [journals, setJournals] = useState<JournalEntry[]>([]);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [pomodoroTime, setPomodoroTime] = useState(0);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [debtUnits, setDebtUnits] = useState(0);
-  
-  const [lockdownMode, setLockdownMode] = useState<'NONE' | 'GAUNTLET' | 'QUIZ' | 'EVIDENCE_AUDit' | 'DELETION_FRICTION' | 'RESCHEDULE' | 'AMENDMENT_FRICTION' | 'BREACH_ALERT' | 'PROACTIVE_AUTOPSY'>('NONE');
-  const [currentAiQuestion, setCurrentAiQuestion] = useState('');
-  const [userInput, setUserInput] = useState('');
-  const [technicalEvidence, setTechnicalEvidence] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [quizData, setQuizData] = useState<{qs: string[], ans: string[]}>({qs: [], ans: []});
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [deleteTimer, setDeleteTimer] = useState(0);
+// --- HELPERS ---
+const generateId = () => crypto.randomUUID();
 
-  const lastSyncRef = useRef<number>(Date.now());
+const isTaskBlocked = (task: Task, allTasks: Task[]) => {
+  if (!task.dependencies || task.dependencies.length === 0) return false;
+  const dependencies = allTasks.filter(t => task.dependencies.includes(t.id));
+  return dependencies.some(t => t.status !== 'COMPLETED');
+};
 
-  useEffect(() => {
-    const loadData = async () => {
-      const l = await StorageService.getAll('logs');
-      const t = await StorageService.getAll('tasks');
-      const j = await StorageService.getAll('journals');
-      const p = await StorageService.getAll('profile');
-      
-      const sortedLogs = l.sort((a,b) => b.timestamp - a.timestamp);
-      setLogs(sortedLogs);
-      setTasks(t);
-      setJournals(j);
-      
-      if (p.length > 0) {
-        const userProfile = p[0];
-        setProfile(userProfile);
-        setDebtUnits(userProfile.integrityDebt || 0);
-        setView(ViewState.PLANNER);
-        
-        const lastLog = sortedLogs[0];
-        if (lastLog && (Date.now() - lastLog.timestamp) > 24 * 60 * 60 * 1000) {
-          triggerProactiveAutopsy();
-        }
-      }
-    };
-    loadData();
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission();
-    }
-  }, []);
+// --- COMPONENTS ---
 
-  useEffect(() => {
-    const now = Date.now();
-    if (now - lastSyncRef.current > 2000 || lockdownMode !== 'NONE') {
-      if (logs.length) StorageService.save('logs', logs);
-      if (tasks.length) StorageService.save('tasks', tasks);
-      if (journals.length) StorageService.save('journals', journals);
-      if (profile) StorageService.save('profile', { ...profile, integrityDebt: debtUnits, id: 'current' });
-      lastSyncRef.current = now;
-    }
-  }, [logs, tasks, journals, profile, debtUnits, lockdownMode]);
+interface SidebarProps {
+  view: ViewState;
+  setView: (v: ViewState) => void;
+  profile: UserProfile | null;
+}
 
-  const triggerProactiveAutopsy = () => {
-    setLockdownMode('PROACTIVE_AUTOPSY');
-    setCurrentAiQuestion("Registry inactivity detected for >24h. The void is expanding. State the divergence that occurred during this absence.");
-  };
-
-  useEffect(() => {
-    const mainLoop = setInterval(() => {
-      const nowTs = Date.now();
-      const nowStr = new Date().toTimeString().slice(0, 5);
-      
-      const sortedLogs = [...logs].sort((a,b) => b.timestamp - a.timestamp);
-      const lastLog = sortedLogs[0];
-      if (lastLog && (nowTs - lastLog.timestamp) > 24 * 60 * 60 * 1000 && lockdownMode === 'NONE') {
-        triggerProactiveAutopsy();
-      }
-
-      tasks.forEach(t => {
-        if (t.status === 'SCHEDULED' && t.scheduledTimeStart === nowStr && localStorage.getItem(`alert_${t.id}`) !== nowStr) {
-          localStorage.setItem(`alert_${t.id}`, nowStr);
-          addLog(LogType.ALARM_TRIGGERED, `OBLIGATION START: ${t.title}`);
-          setLockdownMode('BREACH_ALERT');
-          setCurrentAiQuestion(`OBLIGATION DETECTED: ${t.title}. The registry demands execution.`);
-          sendNotification(`MIRROR: Obligation Started`, `Registry task "${t.title}" is now active.`);
-        }
-      });
-
-      if (!activeTaskId && lockdownMode === 'NONE') {
-        setDebtUnits(prev => prev + 0.01);
-      }
-
-      if (activeTaskId && lockdownMode === 'NONE') {
-        setPomodoroTime(prev => {
-          if (prev <= 1) {
-            startQuiz(); 
-            return 0;
-          }
-          return prev - 1;
-        });
-        setTasks(p => p.map(t => t.id === activeTaskId ? { ...t, actualTimeSpentSeconds: t.actualTimeSpentSeconds + 1 } : t));
-      }
-
-      if (lockdownMode === 'DELETION_FRICTION' && deleteTimer > 0) {
-        setDeleteTimer(prev => prev - 1);
-      }
-    }, 1000);
-    return () => clearInterval(mainLoop);
-  }, [activeTaskId, lockdownMode, tasks, deleteTimer, logs]);
-
-  const sendNotification = (title: string, body: string) => {
-    if (Notification.permission === "granted") {
-      new Notification(title, { body, icon: "/favicon.ico" });
-    }
-  };
-
-  const addLog = (type: LogType, content: string, metadata?: any) => {
-    setLogs(p => [{ id: crypto.randomUUID(), timestamp: Date.now(), type, content, metadata }, ...p]);
-  };
-
-  const startQuiz = async () => {
-    setIsLoading(true);
-    setLockdownMode('QUIZ');
-    const task = tasks.find(t => t.id === activeTaskId)!;
-    try {
-      const qs = await GeminiService.generateTechnicalQuiz(task.title);
-      setQuizData({ qs, ans: new Array(qs.length).fill('') });
-    } catch (e) {
-      setQuizData({ qs: ["Manual verification required."], ans: [""] });
-    }
-    setIsLoading(false);
-  };
-
-  const finalizeEvidence = async () => {
-    setIsLoading(true);
-    const task = tasks.find(t => t.id === activeTaskId)!;
-    const res = await GeminiService.verifyTechnicalEvidence(task.title, technicalEvidence);
-    if (res.passed) {
-      addLog(LogType.QUIZ_SUCCESS, `VERIFIED: ${task.title}. Audit: ${res.audit}`);
-      setTasks(p => p.map(t => t.id === activeTaskId ? { ...t, status: 'COMPLETED', technicalEvidence } : t));
-      setLockdownMode('NONE'); 
-      setActiveTaskId(null); 
-      setView(ViewState.PLANNER);
-      setTechnicalEvidence('');
-    } else {
-      addLog(LogType.QUIZ_FAILURE, `EVIDENCE REJECTED: ${res.audit}`);
-      setDebtUnits(p => p + 100);
-      setCurrentAiQuestion(`AUDIT FAILED: ${res.audit}. Legitimate technical proof is required.`);
-      setLockdownMode('EVIDENCE_AUDit');
-    }
-    setIsLoading(false);
-  };
-
-  const handleLogShield = (shield: string) => {
-    addLog(LogType.SHIELD_LOGGED, `INTELLECTUAL SHIELD ADMITTED: ${shield}`);
-    setDebtUnits(prev => prev + 50);
-  };
-
-  const integrityScore = tasks.length === 0 ? 100 : Math.round((tasks.filter(t => t.status === 'COMPLETED').length / tasks.length) * 100);
-
-  if (view === ViewState.ONBOARDING) {
-    return <Onboarding onComplete={(p) => { setProfile(p); setView(ViewState.PLANNER); addLog(LogType.CONFESSION, "Registry Initiated."); }} />;
-  }
-
-  const navItems = [
-    { v: ViewState.PLANNER, icon: <List size={22}/>, label: 'REGISTRY' },
-    { v: ViewState.JOURNAL, icon: <Brain size={22}/>, label: 'DUMP' },
-    { v: ViewState.ANALYTICS, icon: <BarChart2 size={22}/>, label: 'AUTOPSY' },
-    { v: ViewState.HISTORY, icon: <History size={22}/>, label: 'LOGS' }
+const Sidebar: React.FC<SidebarProps> = ({ view, setView, profile }) => {
+  const items = [
+    { id: ViewState.DASHBOARD, label: 'Dashboard', icon: <LayoutDashboard size={20} /> },
+    { id: ViewState.TASKS, label: 'Planner', icon: <CheckSquare size={20} /> },
+    { id: ViewState.JOURNAL, label: 'Journal', icon: <Book size={20} /> },
+    { id: ViewState.ANALYTICS, label: 'Patterns', icon: <Activity size={20} /> },
+    { id: ViewState.HISTORY, label: 'The Ledger', icon: <History size={20} /> },
   ];
 
   return (
-    <div className={`h-screen w-screen bg-void text-gray-300 font-mono flex flex-col overflow-hidden select-none ${lockdownMode !== 'NONE' ? 'animate-pulse' : ''}`}>
-      
-      <div className="fixed top-0 left-0 w-full h-1 bg-gray-900 z-[300]">
-        <div className="h-full bg-danger transition-all duration-1000 shadow-[0_0_15px_#7f1d1d]" style={{ width: `${Math.min(100, (debtUnits / 1000) * 100)}%` }} />
+    <div className="w-64 bg-surface border-r border-border h-screen flex flex-col hidden md:flex shrink-0">
+      <div className="p-6">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="w-8 h-8 rounded-lg bg-gradient-primary flex items-center justify-center text-white font-bold shadow-glow">
+            <Flame size={18} fill="white" />
+          </div>
+          <span className="font-bold text-lg tracking-tight text-white">MIRROR</span>
+        </div>
+        <p className="text-[10px] text-gray-500 font-mono pl-11">NO ESCAPES.</p>
       </div>
 
-      <header className="h-16 lg:h-20 bg-surface/90 border-b border-gray-900 flex items-center justify-between px-6 lg:px-12 z-[200] backdrop-blur-xl">
-        <div className="flex items-center gap-4">
-          <ShieldAlert className={integrityScore < 50 ? 'text-danger animate-pulse' : 'text-success'} size={24}/>
+      <nav className="flex-1 px-4 space-y-1">
+        {items.map(item => (
+          <button
+            key={item.id}
+            onClick={() => { soundService.playClick(); setView(item.id); }}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${
+              view === item.id 
+                ? 'bg-gradient-primary text-white shadow-glow' 
+                : 'text-gray-400 hover:bg-card hover:text-white'
+            }`}
+          >
+            {item.icon}
+            {item.label}
+          </button>
+        ))}
+      </nav>
+
+      <div className="p-4 border-t border-border">
+        <div className="flex items-center gap-3 px-2">
+          <div className="w-10 h-10 rounded-full bg-card border border-border flex items-center justify-center text-gray-400">
+            <User size={20} />
+          </div>
           <div className="flex flex-col">
-            <span className="text-[12px] font-black tracking-tighter text-white uppercase leading-none leading-none">MIRROR // AMON_V2.0</span>
-            <span className="hidden lg:block text-[8px] font-bold text-gray-600 uppercase tracking-[0.5em] mt-1.5">BEHAVIORAL_TRACKING</span>
+            <span className="text-sm font-medium text-white">Analyst</span>
+            <span className="text-[10px] text-gray-500 font-mono">Debt: {Math.floor(profile?.integrityDebt || 0)}</span>
           </div>
         </div>
+      </div>
+    </div>
+  );
+};
+
+interface PomodoroWidgetProps {
+  state: PomodoroState;
+  onToggle: () => void;
+  onReset: () => void;
+  onUpdateSettings: (work: number, breakMin: number) => void;
+}
+
+const PomodoroWidget: React.FC<PomodoroWidgetProps> = ({ 
+  state, 
+  onToggle, 
+  onReset, 
+  onUpdateSettings 
+}) => {
+  const [showSettings, setShowSettings] = useState(false);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const getDisplayTime = () => {
+    if (!state.isActive || !state.startTime) {
+      return state.durationMinutes * 60;
+    }
+    const elapsedSeconds = Math.floor((now - state.startTime) / 1000);
+    const remaining = (state.durationMinutes * 60) - elapsedSeconds;
+    return Math.max(0, remaining);
+  };
+
+  const secondsLeft = getDisplayTime();
+  const mins = Math.floor(secondsLeft / 60);
+  const secs = Math.floor(secondsLeft % 60);
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-6 relative overflow-hidden h-full flex flex-col justify-between">
+      {showSettings && (
+        <div className="absolute inset-0 bg-surface/95 z-20 flex flex-col items-center justify-center p-6 space-y-4 animate-in fade-in">
+          <h3 className="text-white font-bold text-sm uppercase tracking-wider">Timer Config</h3>
+          <div className="flex gap-4">
+             <div className="text-center">
+               <label className="text-[10px] text-gray-500 uppercase block mb-1">Work</label>
+               <input id="pomoWork" type="number" defaultValue={state.settings.work} className="bg-black border border-gray-700 w-16 p-2 text-white text-center rounded text-sm"/>
+             </div>
+             <div className="text-center">
+               <label className="text-[10px] text-gray-500 uppercase block mb-1">Break</label>
+               <input id="pomoBreak" type="number" defaultValue={state.settings.break} className="bg-black border border-gray-700 w-16 p-2 text-white text-center rounded text-sm"/>
+             </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setShowSettings(false)} className="text-xs text-gray-500 px-4 py-2 hover:text-white">Cancel</button>
+            <button onClick={() => {
+              const w = parseInt((document.getElementById('pomoWork') as HTMLInputElement).value) || 25;
+              const b = parseInt((document.getElementById('pomoBreak') as HTMLInputElement).value) || 5;
+              onUpdateSettings(w, b);
+              setShowSettings(false);
+            }} className="text-xs bg-primary text-white px-4 py-2 rounded font-bold">Save</button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-between items-start mb-4">
+        <div className="flex items-center gap-2 text-white font-bold">
+          <Clock size={18} className={state.isBreak ? "text-success" : "text-primary"} />
+          <span>{state.isBreak ? "Recovery Protocol" : "Deep Work Cycle"}</span>
+        </div>
+        <Settings size={16} className="text-gray-600 hover:text-white cursor-pointer" onClick={() => setShowSettings(true)} />
+      </div>
+      
+      <div className="text-center py-4">
+        <div className={`text-7xl font-mono font-bold tracking-tighter tabular-nums ${state.isBreak ? 'text-success' : 'text-white'}`}>
+          {mins.toString().padStart(2, '0')}:{secs.toString().padStart(2, '0')}
+        </div>
+        <div className="text-xs font-mono text-gray-500 uppercase tracking-widest mt-2">
+          {state.isActive ? "Focus Locked" : "System Idle"}
+        </div>
+      </div>
+
+      <div className="flex justify-center gap-2">
+         <button onClick={() => { soundService.playClick(); onReset(); }} className="p-3 rounded-full bg-surface border border-border text-gray-400 hover:text-white hover:border-gray-600 transition-all">
+           <History size={18} />
+         </button>
+         <button 
+           onClick={() => { soundService.playClick(); onToggle(); }}
+           className="px-8 py-3 bg-white text-black rounded-full font-bold uppercase tracking-wider flex items-center gap-2 hover:bg-gray-200 transition-colors"
+         >
+           {state.isActive ? <Pause size={18} fill="black" /> : <Play size={18} fill="black" />}
+           {state.isActive ? "Pause" : "Start"}
+         </button>
+      </div>
+    </div>
+  );
+};
+
+// --- MAIN APP COMPONENT ---
+
+export default function App() {
+  const [view, setView] = useState<ViewState>(ViewState.ONBOARDING);
+  
+  // GLOBAL STATE
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [journals, setJournals] = useState<JournalEntry[]>([]);
+  const [pomodoro, setPomodoro] = useState<PomodoroState>({
+    id: 'global_pomodoro',
+    isActive: false,
+    isBreak: false,
+    durationMinutes: 25,
+    settings: { work: 25, break: 5 }
+  });
+
+  const lastActionTime = useRef(Date.now());
+  const notifRef = useRef<Record<string, number>>({}); 
+
+  // GLOBAL MODAL STATE
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  
+  // GLOBAL INTERVENTION MODALS
+  const [gatekeeperTask, setGatekeeperTask] = useState<Task | null>(null);
+  const [verifierTask, setVerifierTask] = useState<Task | null>(null);
+
+  // --- PERSISTENCE & INIT ---
+  useEffect(() => {
+    const load = async () => {
+      // WAKE UP AUDIO CONTEXT on first click
+      const resumeAudio = () => {
+        soundService.playClick(); 
+        window.removeEventListener('click', resumeAudio);
+      };
+      window.addEventListener('click', resumeAudio);
+
+      const p = await StorageService.getAll('profile');
+      const t = await StorageService.getAll('tasks');
+      const l = await StorageService.getAll('logs');
+      const j = await StorageService.getAll('journals');
+      const pomo = await StorageService.get('pomodoro', 'global_pomodoro');
+      
+      if (p.length > 0) {
+        setProfile(p[0]);
+        setView(ViewState.DASHBOARD);
+      }
+      setTasks(t);
+      setLogs(l.sort((a,b) => b.timestamp - a.timestamp));
+      setJournals(j.sort((a,b) => b.timestamp - a.timestamp));
+      if (pomo) setPomodoro(pomo);
+
+      if ('Notification' in window && Notification.permission !== 'granted') {
+         Notification.requestPermission();
+      }
+    };
+    load();
+  }, []);
+
+  const saveLog = (type: LogType, content: string, metadata?: any) => {
+    lastActionTime.current = Date.now(); 
+    const log: LogEntry = {
+      id: generateId(),
+      timestamp: Date.now(),
+      type,
+      content,
+      metadata
+    };
+    
+    // Optimistic Update & Sync Save
+    setLogs(prev => [log, ...prev]);
+    StorageService.add('logs', log).catch(err => console.error("Log save failed", err));
+  };
+  
+  const savePomodoro = (newState: PomodoroState) => {
+    setPomodoro(newState);
+    StorageService.save('pomodoro', newState);
+  };
+
+  const handleSaveReportToJournal = (reportContent: string) => {
+      const now = new Date();
+      const hour = now.getHours();
+      let timeOfDay: JournalEntry['metadata']['time_of_day'] = 'night';
+      if (hour >= 5 && hour < 12) timeOfDay = 'morning';
+      else if (hour >= 12 && hour < 17) timeOfDay = 'afternoon';
+      else if (hour >= 17 && hour < 21) timeOfDay = 'evening';
+
+      const entry: JournalEntry = {
+          id: generateId(),
+          timestamp: Date.now(),
+          startTime: Date.now(),
+          content: reportContent,
+          metadata: {
+              word_count: reportContent.split(' ').length,
+              char_count: reportContent.length,
+              writing_duration_seconds: 0,
+              keystrokes: 0,
+              pauses: 0,
+              words_per_minute: 0,
+              time_of_day: timeOfDay,
+              hour_of_day: hour,
+              day_of_week: now.toLocaleDateString('en-US', { weekday: 'long' })
+          }
+      };
+      
+      setJournals(prev => [entry, ...prev]);
+      StorageService.add('journals', entry);
+      saveLog(LogType.JOURNAL_DUMP, "Deep Analysis Report saved to Journal.", { reportLength: reportContent.length });
+  };
+
+  // --- BACKGROUND PROCESSES (NOTIFICATIONS) ---
+  useEffect(() => {
+    const interval = setInterval(() => {
+       const now = Date.now();
+       
+       if (pomodoro.isActive && pomodoro.startTime) {
+           const elapsed = Math.floor((now - pomodoro.startTime) / 1000);
+           const totalSeconds = pomodoro.durationMinutes * 60;
+           if (elapsed >= totalSeconds) {
+               soundService.playAlarm();
+               // Haptic feedback for mobile
+               if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
+               
+               saveLog(LogType.POMODORO_SESSION, `${pomodoro.isBreak ? 'Recovery' : 'Work'} cycle complete.`);
+               if ('Notification' in window && Notification.permission === 'granted') {
+                   new Notification('Timer Complete', { body: 'Cycle finished. Report to console.' });
+               }
+               savePomodoro({ ...pomodoro, isActive: false, startTime: undefined });
+           }
+       }
+
+       tasks.forEach(t => {
+          if (t.status === 'SCHEDULED' && t.scheduledTimestamp && t.remindersEnabled) {
+              const diffMs = t.scheduledTimestamp - now;
+              const diffMin = Math.floor(diffMs / 60000);
+              const triggers = [10, 5, 2];
+              
+              if (triggers.includes(diffMin)) {
+                  const key = `${t.id}-remind-${diffMin}`;
+                  if (!notifRef.current[key]) {
+                      notifRef.current[key] = now;
+                      soundService.playAlarm();
+                      if (navigator.vibrate) navigator.vibrate(200);
+                      if ('Notification' in window && Notification.permission === 'granted') {
+                         const n = new Notification(`Task Starting Soon: ${t.title}`, { 
+                             body: `${diffMin} minutes remaining. Prepare for execution.`,
+                             requireInteraction: true 
+                         });
+                         n.onclick = () => window.focus();
+                      }
+                  }
+              }
+          }
+
+          if (t.status === 'PAUSED' && t.pausedUntil) {
+             const leftMs = t.pausedUntil - now;
+             
+             if (leftMs <= 5000 && leftMs > 0) {
+                 const key = `${t.id}-pause-warn`;
+                 if (!notifRef.current[key]) {
+                     notifRef.current[key] = now;
+                     soundService.playAlarm(); 
+                     if (navigator.vibrate) navigator.vibrate(200);
+                     if ('Notification' in window && Notification.permission === 'granted') {
+                         const n = new Notification('BREAK ENDING', { 
+                             body: `Return to: ${t.title} immediately.`,
+                             requireInteraction: true 
+                         });
+                         n.onclick = () => window.focus();
+                     }
+                 }
+             }
+
+             if (leftMs <= 0) {
+                 soundService.playAlarm(); 
+                 
+                 const key = `${t.id}-pause-end-log`;
+                 if (!notifRef.current[key]) {
+                     notifRef.current[key] = now;
+                     saveLog(LogType.ALARM_TRIGGERED, `Break ended for ${t.title}. Alarm engaged.`);
+                 }
+             }
+          }
+       });
+
+       const hasActiveTask = tasks.some(t => t.status === 'IN_PROGRESS');
+       if (hasActiveTask) {
+         const inactivityTime = now - lastActionTime.current;
+         if (inactivityTime > 45 * 60 * 1000 && inactivityTime < (45 * 60 * 1000 + 2000)) {
+           if ('Notification' in window && Notification.permission === 'granted') {
+             new Notification('Inertia Detected', { body: 'Are you working or drifting? Log your status.' });
+           }
+           soundService.playError();
+           saveLog(LogType.GHOSTING_DETECTED, "System detected prolonged inactivity during active protocol.");
+         }
+       }
+
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [tasks, pomodoro]);
+
+  // --- HANDLERS ---
+  const handleTaskStart = (id: string) => {
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+    
+    if (task.dependencies && task.dependencies.length > 0) {
+        const blocking = tasks.filter(t => task.dependencies.includes(t.id) && t.status !== 'COMPLETED');
+        if (blocking.length > 0) {
+            alert(`BLOCKED BY: ${blocking.map(t => t.title).join(', ')}`);
+            soundService.playError();
+            return;
+        }
+    }
+
+    const updatedTask: Task = { ...task, status: 'IN_PROGRESS', lastSessionStart: Date.now(), pausedUntil: undefined };
+    // Atomic Update Pattern
+    const newTasks = tasks.map(t => t.id === id ? updatedTask : t);
+    setTasks(newTasks);
+    StorageService.saveItem('tasks', updatedTask);
+    saveLog(LogType.TASK_STARTED, `Execution initiated: ${task.title}`);
+  };
+
+  const handleTaskPause = useCallback((id: string, minutes: number | null, transcript?: string) => {
+    setTasks(prev => {
+        const task = prev.find(t => t.id === id);
+        if (!task) return prev;
+
+        const addedTime = task.lastSessionStart ? Math.floor((Date.now() - task.lastSessionStart)/1000) : 0;
+        const updatedTask: Task = {
+            ...task,
+            status: 'PAUSED',
+            accumulatedTimeSeconds: task.accumulatedTimeSeconds + addedTime,
+            lastSessionStart: undefined,
+            pausedUntil: minutes ? Date.now() + (minutes * 60 * 1000) : undefined,
+            escapeAttempts: (task.escapeAttempts || 0) + 1
+        };
         
-        <div className="flex items-center gap-4 lg:gap-12">
-           <div className="text-right">
-             <div className="text-[8px] font-black text-danger uppercase tracking-widest mb-0.5">DEBT</div>
-             <div className="text-lg lg:text-2xl font-black tabular-nums text-danger leading-none">{Math.floor(debtUnits)}</div>
-           </div>
-           <div className="text-right hidden xs:block">
-             <div className="text-[8px] font-black text-gray-600 uppercase tracking-widest mb-0.5">INTG</div>
-             <div className={`text-lg lg:text-2xl font-black tabular-nums leading-none ${integrityScore < 40 ? 'text-danger' : 'text-success'}`}>{integrityScore}%</div>
-           </div>
-           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 border border-gray-800 lg:hidden text-gray-400">
-             {isSidebarOpen ? <X size={20}/> : <Menu size={20}/>}
-           </button>
-        </div>
-      </header>
+        // Save to DB
+        StorageService.saveItem('tasks', updatedTask);
+        saveLog(LogType.TASK_PAUSED, `Paused task. Duration: ${minutes}m`, { transcript });
 
-      <div className="flex-1 overflow-hidden relative flex">
-        <nav className={`
-          fixed lg:relative inset-0 w-full lg:w-72 bg-void lg:bg-surface border-r border-gray-900 z-[250] transition-transform duration-300
-          ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-          flex flex-col
-        `}>
-          <div className="flex-1 overflow-y-auto py-12 lg:py-6">
-            {navItems.map(item => (
-              <button key={item.v} onClick={() => { setView(item.v); setIsSidebarOpen(false); }} className={`w-full px-10 py-8 lg:px-6 lg:py-4 flex items-center gap-6 transition-all group ${view === item.v ? 'bg-danger text-white' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
-                {item.icon}
-                <div className="text-left">
-                  <div className="text-[11px] font-black uppercase tracking-widest">{item.label}</div>
-                </div>
+        return prev.map(t => t.id === id ? updatedTask : t);
+    });
+  }, []);
+
+  const handleTaskComplete = useCallback((id: string) => {
+    setTasks(prev => {
+      const task = prev.find(t => t.id === id);
+      if (!task) return prev;
+      
+      const addedTime = task.lastSessionStart ? Math.floor((Date.now() - task.lastSessionStart)/1000) : 0;
+      const updatedTask: Task = {
+        ...task,
+        status: 'COMPLETED',
+        accumulatedTimeSeconds: task.accumulatedTimeSeconds + addedTime,
+        lastSessionStart: undefined,
+        pausedUntil: undefined
+      };
+
+      StorageService.saveItem('tasks', updatedTask);
+      saveLog(LogType.TASK_COMPLETED, `Task verified and completed.`);
+
+      let newTaskList = prev.map(t => t.id === id ? updatedTask : t);
+
+      // Handle recurrence
+      if (task.recurrence && task.recurrence !== 'NONE') {
+         const nextStart = new Date();
+         if (task.recurrence === 'DAILY') nextStart.setDate(nextStart.getDate() + 1);
+         if (task.recurrence === 'WEEKLY') nextStart.setDate(nextStart.getDate() + 7);
+         
+         const nextTask: Task = {
+           ...task,
+           id: generateId(),
+           status: 'SCHEDULED',
+           accumulatedTimeSeconds: 0,
+           escapeAttempts: 0,
+           lastSessionStart: undefined,
+           pausedUntil: undefined,
+           scheduledTimeStart: nextStart.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+           deadlineTimestamp: undefined,
+           remindersEnabled: task.remindersEnabled
+         };
+         
+         StorageService.saveItem('tasks', nextTask);
+         newTaskList = [nextTask, ...newTaskList];
+      }
+      return newTaskList;
+    });
+  }, []);
+
+  const handleTaskDelete = (id: string, reason: string) => {
+    const t = tasks.find(x => x.id === id);
+    const newTasks = tasks.filter(x => x.id !== id);
+    setTasks(newTasks);
+    // Bulk save for deletes to ensure full sync
+    StorageService.save('tasks', newTasks); 
+    saveLog(LogType.TASK_DELETED, `Task destroyed: ${t?.title}`, { reason });
+  };
+
+  const handleSaveTask = (data: Partial<Task>) => {
+    soundService.playClick();
+    
+    if (editingTask) {
+        // UPDATE EXISTING
+        const updatedTask = { ...editingTask, ...data };
+        const newTasks = tasks.map(t => t.id === editingTask.id ? updatedTask : t);
+        setTasks(newTasks);
+        StorageService.saveItem('tasks', updatedTask);
+        saveLog(LogType.CONTRACT_AMENDED, `Obligation updated: ${updatedTask.title}`);
+        setEditingTask(null);
+    } else {
+        // CREATE NEW
+        const t: Task = {
+            id: generateId(),
+            title: data.title!,
+            description: data.description,
+            category: data.category!,
+            tags: [],
+            scheduledTimeStart: data.scheduledTimeStart!,
+            scheduledTimestamp: data.scheduledTimestamp,
+            deadlineTimestamp: data.deadlineTimestamp,
+            durationMinutes: data.durationMinutes!,
+            recurrence: data.recurrence,
+            status: 'SCHEDULED',
+            accumulatedTimeSeconds: 0,
+            stakes: 'HIGH',
+            dependencies: data.dependencies || [],
+            subTasks: [],
+            escapeAttempts: 0,
+            remindersEnabled: data.remindersEnabled ?? true
+        };
+        const newTasks = [t, ...tasks];
+        setTasks(newTasks);
+        StorageService.saveItem('tasks', t);
+        saveLog(LogType.CONTRACT_SIGNED, `Obligation etched: ${t.title}`);
+    }
+    setIsTaskModalOpen(false);
+  };
+
+  const handleOpenEdit = (task: Task) => {
+      setEditingTask(task);
+      setIsTaskModalOpen(true);
+  };
+
+  const handleOpenCreate = () => {
+      setEditingTask(null);
+      setIsTaskModalOpen(true);
+  };
+
+  if (view === ViewState.ONBOARDING) {
+    return <Onboarding onComplete={(p) => { 
+      setProfile(p); 
+      StorageService.save('profile', p);
+      setView(ViewState.DASHBOARD); 
+    }} addLog={saveLog} />;
+  }
+
+  const activeTasks = tasks.filter(t => t.status === 'IN_PROGRESS' || t.status === 'PAUSED');
+  const pendingTasks = tasks.filter(t => t.status === 'SCHEDULED');
+  const integrity = tasks.length ? Math.round((tasks.filter(t => t.status === 'COMPLETED').length / tasks.length) * 100) : 100;
+
+  return (
+    <div className="flex h-screen bg-background text-gray-300 font-sans selection:bg-primary/30 overflow-hidden">
+      <Sidebar view={view} setView={setView} profile={profile} />
+
+      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
+        <header className="h-20 border-b border-border flex items-center justify-between px-6 md:px-8 bg-surface/50 backdrop-blur-md z-10 shrink-0">
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold text-white tracking-tight">{view.charAt(0) + view.slice(1).toLowerCase()}</h1>
+            <p className="text-[10px] md:text-xs text-gray-500 font-medium">Face your tasks. No escapes.</p>
+          </div>
+          <div className="flex gap-4">
+             <div className="flex flex-col items-end">
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Integrity</span>
+                <span className={`text-xl font-black ${integrity < 50 ? 'text-danger' : 'text-success'}`}>{integrity}%</span>
+             </div>
+             {view === ViewState.DASHBOARD && (
+               <button 
+                onClick={handleOpenCreate}
+                className="bg-gradient-primary hover:brightness-110 text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-glow transition-all flex items-center gap-2"
+              >
+                <Plus size={18} strokeWidth={3} /> <span className="hidden md:inline">Quick Task</span>
               </button>
-            ))}
+             )}
           </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-0 scrollbar-hide pb-24 relative">
           
-          <div className="p-6 border-t border-gray-900 lg:hidden flex gap-4">
-             <button onClick={() => {/* export func */}} className="flex-1 p-4 border border-gray-800 text-xs font-black flex items-center justify-center gap-2"><Download size={16}/> EXPORT</button>
-             <button onClick={() => {/* import func */}} className="flex-1 p-4 border border-gray-800 text-xs font-black flex items-center justify-center gap-2"><Upload size={16}/> IMPORT</button>
-          </div>
-
-          <div className="p-6 border-t border-gray-900">
-             <ShieldLog onLogShield={handleLogShield} />
-          </div>
-        </nav>
-
-        <main className="flex-1 overflow-y-auto bg-void relative pb-24 lg:pb-0 scrollbar-hide">
-          {view === ViewState.EXECUTION_TUNNEL ? (
-            <div className="h-full flex flex-col items-center justify-center p-8 bg-black relative">
-              <div className="absolute inset-0 opacity-10 pointer-events-none bg-[radial-gradient(circle_at_center,_#7f1d1d,_transparent_70%)]" />
-              <h2 className="text-[10px] tracking-[1em] text-danger font-black mb-8 uppercase z-10 text-center">CONTRACT_ACTIVE</h2>
-              <h1 className="text-3xl lg:text-6xl font-black text-white mb-12 tracking-tighter uppercase text-center z-10 leading-none">
-                {tasks.find(t => t.id === activeTaskId)?.title}
-              </h1>
-              <div className="text-7xl lg:text-[12rem] font-mono text-danger mb-16 tabular-nums font-black z-10 drop-shadow-[0_0_20px_#7f1d1d]">
-                {Math.floor(pomodoroTime / 60)}:{Math.floor(pomodoroTime % 60).toString().padStart(2, '0')}
+          {view === ViewState.DASHBOARD && (
+            <div className="p-4 md:p-8 space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-auto lg:h-80">
+                <PomodoroWidget 
+                  state={pomodoro} 
+                  onToggle={() => pomodoro.isActive ? savePomodoro({...pomodoro, isActive:false}) : savePomodoro({...pomodoro, isActive:true, startTime: Date.now()})} 
+                  onReset={() => savePomodoro({...pomodoro, isActive:false, startTime:undefined})} 
+                  onUpdateSettings={(w, b) => savePomodoro({...pomodoro, settings:{work:w, break:b}, durationMinutes:w, isActive:false, startTime:undefined})} 
+                />
+                
+                <ReflectionSession 
+                   onAddLog={saveLog} 
+                   onSaveJournal={handleSaveReportToJournal} 
+                />
               </div>
-              <div className="flex flex-col lg:flex-row gap-4 w-full max-w-xl z-10">
-                <button onClick={() => { setIsLoading(true); setLockdownMode('GAUNTLET'); GeminiService.getSocraticQuestion(tasks.find(t => t.id === activeTaskId)!, profile!, [], 1).then(q => { setCurrentAiQuestion(q); setIsLoading(false); }); }} className="flex-1 border-2 border-danger text-danger py-6 font-black uppercase tracking-widest text-xs hover:bg-danger/10">ABORT</button>
-                <button onClick={() => setLockdownMode('EVIDENCE_AUDit')} className="flex-1 bg-white text-black py-6 font-black uppercase tracking-widest text-xs">VERIFY</button>
+
+              {/* INTEGRATED SHIELD LOG */}
+              <div className="lg:col-span-2">
+                 <ShieldLog onLogShield={(s) => saveLog(LogType.SHIELD_LOGGED, `Shield activated: ${s}`)} />
               </div>
-            </div>
-          ) : (
-            <div className="h-full">
-              {view === ViewState.PLANNER && <Planner tasks={tasks} onAddTask={t => { addLog(LogType.CONTRACT_SIGNED, `OBLIGATION ETCHED: ${t.title}`); setTasks(p => [...p, t]); }} onDeleteTask={id => { setPendingDeleteId(id); setLockdownMode('DELETION_FRICTION'); setDeleteTimer(10); setCurrentAiQuestion("Is this deletion a strategy or a retreat? State your failure admission."); }} onUpdateTask={t => { setLockdownMode('AMENDMENT_FRICTION'); setCurrentAiQuestion("Why modify the contract? State your admission."); }} onStartTask={id => { const task = tasks.find(t => t.id === id); setActiveTaskId(id); setView(ViewState.EXECUTION_TUNNEL); setPomodoroTime((task?.durationMinutes || 25) * 60); }} sprintGoals={profile?.sprintGoals || []} />}
-              {view === ViewState.JOURNAL && <Journal journals={journals} setJournals={setJournals} profile={profile!} onAddLog={addLog} />}
-              {view === ViewState.ANALYTICS && <Analytics logs={logs} tasks={tasks} profile={profile!} journals={journals} />}
-              {view === ViewState.HISTORY && <div className="p-6 lg:p-12"><ActivityLog logs={logs} /></div>}
+
+              <div>
+                 <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Flame size={18} className="text-primary"/> Active Front</h2>
+                 {activeTasks.length === 0 && (
+                   <div className="text-center p-8 border border-dashed border-border rounded-xl text-gray-600 text-sm">No active operations. Initiate a protocol.</div>
+                 )}
+                 {activeTasks.map(t => (
+                   <TaskCard 
+                      key={t.id} 
+                      task={t} 
+                      onStart={() => handleTaskStart(t.id)} 
+                      onRequestPause={() => setGatekeeperTask(t)}
+                      onRequestComplete={() => setVerifierTask(t)}
+                      onDelete={(r) => handleTaskDelete(t.id, r)}
+                      onRequestReschedule={() => handleOpenEdit(t)}
+                      isBlocked={isTaskBlocked(t, tasks)}
+                    />
+                 ))}
+              </div>
+
+              <div>
+                 <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Target size={18} className="text-gray-400"/> Pending Protocols</h2>
+                 {pendingTasks.map(t => (
+                   <TaskCard 
+                      key={t.id} 
+                      task={t} 
+                      onStart={() => handleTaskStart(t.id)} 
+                      onRequestPause={() => setGatekeeperTask(t)}
+                      onRequestComplete={() => setVerifierTask(t)}
+                      onDelete={(r) => handleTaskDelete(t.id, r)}
+                      onRequestReschedule={() => handleOpenEdit(t)}
+                      isBlocked={isTaskBlocked(t, tasks)}
+                    />
+                 ))}
+              </div>
             </div>
           )}
-        </main>
 
-        <div className="fixed bottom-0 left-0 w-full h-16 bg-surface/95 border-t border-gray-900 lg:hidden flex items-center justify-around z-[400] backdrop-blur-2xl">
-           {navItems.map(item => (
-             <button 
-              key={item.v} 
-              onClick={() => setView(item.v)} 
-              className={`flex flex-col items-center gap-1 transition-colors ${view === item.v ? 'text-danger' : 'text-gray-600'}`}
-             >
-               {item.icon}
-               <span className="text-[8px] font-black uppercase tracking-tighter">{item.label}</span>
-             </button>
-           ))}
+          {view === ViewState.TASKS && (
+            <Planner 
+              tasks={tasks} 
+              onAddTaskRequest={handleOpenCreate}
+              onEditTaskRequest={handleOpenEdit}
+              onDeleteTask={(id) => handleTaskDelete(id, "Deleted from planner")} 
+              onStartTask={handleTaskStart} 
+              onRequestPause={setGatekeeperTask}
+              onRequestComplete={setVerifierTask}
+              sprintGoals={profile?.sprintGoals || []} 
+            />
+          )}
+          {view === ViewState.ANALYTICS && (
+            <Analytics 
+              logs={logs} 
+              tasks={tasks} 
+              profile={profile!} 
+              journals={journals} 
+              onSaveReport={handleSaveReportToJournal}
+            />
+          )}
+          {view === ViewState.HISTORY && <ActivityLog logs={logs} />}
+          {view === ViewState.JOURNAL && (
+            <Journal 
+              journals={journals} 
+              setJournals={(fn) => {
+                 if (typeof fn === 'function') {
+                   setJournals(prev => {
+                     const next = fn(prev);
+                     StorageService.save('journals', next);
+                     return next;
+                   });
+                 } else {
+                   setJournals(fn);
+                   StorageService.save('journals', fn);
+                 }
+              }} 
+              profile={profile!} 
+              onAddLog={saveLog} 
+            />
+          )}
         </div>
-      </div>
 
-      {lockdownMode !== 'NONE' && (
-        <div className="fixed inset-0 z-[600] bg-void/98 flex items-center justify-center p-4 backdrop-blur-xl overflow-y-auto">
-           <div className={`w-full max-w-2xl bg-surface border-2 p-8 lg:p-16 shadow-2xl border-danger`}>
-              <h2 className="text-xl md:text-3xl font-black mb-8 uppercase flex items-center gap-4 text-white tracking-tighter">
-                <ShieldAlert className="text-danger" size={32}/> {lockdownMode.replace(/_/g, ' ')}
-              </h2>
-              {isLoading ? (
-                <div className="text-center py-20 animate-pulse text-danger font-black tracking-widest uppercase text-xs">AMON IS ANALYZING...</div>
-              ) : (
-                <div className="space-y-8">
-                   <p className="text-lg md:text-2xl text-red-100 italic border-l-4 border-danger pl-6 font-bold leading-tight">"{currentAiQuestion}"</p>
-                   
-                   {lockdownMode === 'EVIDENCE_AUDit' ? (
-                     <div className="space-y-6">
-                        <textarea autoFocus value={technicalEvidence} onChange={e => setTechnicalEvidence(e.target.value)} className="w-full h-48 bg-black border border-gray-800 p-6 text-white text-sm outline-none focus:border-white resize-none" placeholder="Paste evidence (SQL/Python)..." />
-                        <button onClick={finalizeEvidence} className="w-full bg-white text-black py-5 font-black uppercase tracking-widest text-xs">AUDIT EVIDENCE</button>
-                        <button onClick={() => setLockdownMode('NONE')} className="w-full text-[10px] text-gray-600 uppercase font-black">Cancel</button>
-                     </div>
-                   ) : (
-                     <>
-                        <textarea autoFocus value={userInput} onChange={e => setUserInput(e.target.value)} className="w-full h-48 bg-black border border-gray-800 p-6 text-white text-sm outline-none focus:border-danger resize-none" placeholder="Admission required..." />
-                        <button 
-                          disabled={userInput.length < 50 || deleteTimer > 0} 
-                          onClick={() => { 
-                            if (lockdownMode === 'DELETION_FRICTION' && pendingDeleteId) {
-                              setTasks(p => p.filter(t => t.id !== pendingDeleteId));
-                            }
-                            setLockdownMode('NONE'); setUserInput(''); setDeleteTimer(0); 
-                          }} 
-                          className={`w-full py-5 font-black uppercase tracking-widest text-xs ${userInput.length >= 50 && deleteTimer === 0 ? 'bg-white text-black' : 'bg-gray-900 text-gray-700'}`}
-                        >
-                          {deleteTimer > 0 ? `COOLING DOWN (${deleteTimer}s)` : 'COMMIT'}
-                        </button>
-                        <p className="text-center text-[8px] text-gray-600 uppercase tracking-widest">{userInput.length}/50 MIN</p>
-                     </>
-                   )}
-                </div>
-              )}
-           </div>
+        {/* Mobile Navigation */}
+        <div className="md:hidden border-t border-border bg-surface/90 backdrop-blur-xl p-4 flex justify-around fixed bottom-0 left-0 w-full z-50">
+           <button onClick={() => setView(ViewState.DASHBOARD)} className={view === ViewState.DASHBOARD ? 'text-primary' : 'text-gray-500'}><LayoutDashboard /></button>
+           <button onClick={() => setView(ViewState.TASKS)} className={view === ViewState.TASKS ? 'text-primary' : 'text-gray-500'}><CheckSquare /></button>
+           <button onClick={handleOpenCreate} className="bg-gradient-primary rounded-full p-3 -mt-8 shadow-glow text-white"><Plus /></button>
+           <button onClick={() => setView(ViewState.ANALYTICS)} className={view === ViewState.ANALYTICS ? 'text-primary' : 'text-gray-500'}><Activity /></button>
+           <button onClick={() => setView(ViewState.JOURNAL)} className={view === ViewState.JOURNAL ? 'text-primary' : 'text-gray-500'}><User /></button>
         </div>
+      </main>
+
+      {/* GLOBAL CREATE/EDIT TASK MODAL */}
+      <CreateTaskDialog 
+         isOpen={isTaskModalOpen}
+         onClose={() => { setIsTaskModalOpen(false); setEditingTask(null); }}
+         onSave={handleSaveTask}
+         tasks={tasks}
+         initialTask={editingTask}
+      />
+
+      {/* GLOBAL INTERVENTION MODALS */}
+      {gatekeeperTask && (
+        <SocraticGatekeeper 
+          taskTitle={gatekeeperTask.title} 
+          onAllowPause={(duration, transcript) => {
+             handleTaskPause(gatekeeperTask.id, duration, transcript);
+             setGatekeeperTask(null);
+          }}
+          onCancel={() => setGatekeeperTask(null)}
+        />
+      )}
+
+      {verifierTask && (
+        <CompletionVerifier 
+          task={verifierTask}
+          onVerified={() => {
+             handleTaskComplete(verifierTask.id);
+             setVerifierTask(null);
+          }}
+          onFail={(shouldReschedule) => {
+             setVerifierTask(null);
+             if (shouldReschedule) {
+                // Open the modal for rescheduling instead of blind 1-hour bump
+                handleOpenEdit(verifierTask);
+             }
+          }}
+          onCancel={() => setVerifierTask(null)}
+        />
       )}
     </div>
   );

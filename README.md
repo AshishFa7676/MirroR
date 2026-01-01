@@ -1,20 +1,51 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
 
-# Run and deploy your AI Studio app
+# MIRROR // BEHAVIORAL REGISTRY
 
-This contains everything you need to run your app locally.
+## "Face your tasks. No escapes."
 
-View your app in AI Studio: https://ai.studio/apps/drive/1m1VIbxnZvxrTKpXTjUvZScddw-6gONhd
+MIRROR is a metacognitive productivity system designed for high-functioning procrastinators. It combines rigid task management, strict socratic interrogation for pauses, and AI-driven psychological profiling to force execution.
 
-## Run Locally
+### ⚡ Quick Start
 
-**Prerequisites:**  Node.js
+1.  **Install Dependencies**
+    ```bash
+    npm install
+    ```
 
+2.  **Configure Environment**
+    Create a `.env` file in the root directory:
+    ```env
+    VITE_GEMINI_API_KEY=your_google_gemini_api_key_here
+    ```
+    *Get a key at [aistudio.google.com](https://aistudio.google.com)*
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+3.  **Run Locally**
+    ```bash
+    npm run dev
+    ```
+
+### 🏗 Architecture & Logic
+
+*   **Atomic Persistence**: Uses IndexedDB via a `StorageService` to ensure zero data loss. Task updates are O(1) atomic writes, not bulk rewrites.
+*   **Unidirectional Data Flow**: The `App.tsx` acts as the single source of truth. Modals and Logic Gates (Socratic Gatekeeper) delegate state back to the root.
+*   **Audio Engine**: A synthesized `SoundService` (Oscillators) removes the need for external MP3 assets and includes a "User Interaction Handshake" to bypass browser audio policies.
+*   **AI Integration**: Deep integration with Google Gemini 2.0 Flash/Pro for:
+    *   **Gatekeeper**: Interrogates you before allowing breaks.
+    *   **Verifier**: Audits task evidence before marking complete.
+    *   **Analyst**: Generates psychological profiles based on your logs.
+
+### 🚀 Deployment
+
+This project is optimized for **Vercel** or **Netlify**.
+
+**Vercel:**
+1.  Push to GitHub.
+2.  Import project to Vercel.
+3.  Add `VITE_GEMINI_API_KEY` to Vercel Environment Variables.
+4.  Deploy.
+
+### ⚠️ Behavioral Warnings
+
+*   **Do not ghost the app.** It tracks inactivity.
+*   **Do not lie to the Verifier.** The AI is prompted to be skeptical.
+*   **Do not ignore the Gatekeeper.** You must justify every pause.
